@@ -18,6 +18,9 @@ The code can cover the following WVC Inverter models of the "Wireless Series R3"
 - WVC-1200-Life
 - WVC-1400-Life
 - WVC-1600-Life
+- WVC-2000-Life
+- WVC-2400-Life
+- WVC-2800-Life
 
 It does not work for the older WVC inverter models with a 433MHz communication module!
 
