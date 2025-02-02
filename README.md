@@ -1,11 +1,11 @@
 # HA-ESPHome-WVC-Inverter
 HA ESPHome code for replacement of the WiFi module inside the KaiDeng WVC-Life Micro Inverters.
 
-Then to micro inverter is directly sending the actual values to Home Assistant. No cloud communication is active anymore :)
+Then the micro inverter is directly sending the actual values to Home Assistant. No cloud communication is active anymore :)
 
 <img src="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverter/blob/main/Pictures/WVC800_HA-Page.png">
 
-In the folder <a href="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverter/tree/main/ESPHome" rel="nofollow">ESPHome</a> are 3 exapmles for the YAML code of the Inverter models WVC-600W, WVC-700W and WVC-800W.
+In the folder <a href="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverter/tree/main/ESPHome" rel="nofollow">ESPHome</a> are 3 exapmles of YAML code for ESP-07S for the inverter models WVC-600W, WVC-700W and WVC-800W.
 
 That code needs to be changed in some of the default values in order to mach your Inverter model settings.
 
@@ -25,12 +25,13 @@ The code can cover the following WVC Inverter models of the "Wireless Series R3"
 - WVC-2400W-Life
 - WVC-2800W-Life
 
-The ESP-07S code incudes
+The code for ESP-07S incudes´:
 
 - a Web-Server interface for Online status and OTA
 - a WiFi Fallback Hotspot" to setup Wifi network logon data in your W-LAN
-- a Home Assistant service "write_uart0" to send commands to the interters microcontroller
+- a Home Assistant service "wvc????_write_uart0" to send commands to the interters microcontroller
 
+<h3 tabindex="-1" class="heading-element" dir="auto">Information</h3>
 For the WVC micro inverters several users have reported unstable network communication and other unstable situations. Many of those problems are related to an uncontrolled overheating of the HF-LPT270 WiFi module.
 The Wifi module does also create additional heat and is not conencted to any cooling elements inside the inverter housing.
 Therefore it is strongly recommended to add as many thermal pads onto the module that are needed to get connection to the aluminium housing lid.
