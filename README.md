@@ -1,5 +1,5 @@
 # HA-ESPHome-WVC-Inverter
-HA ESPHome code for replacment of the WiFi module inside the KaiDeng WVC-Life Micro Inverters.
+HA ESPHome code for replacement of the WiFi module inside the KaiDeng WVC-Life Micro Inverters.
 
 <img src="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverter/blob/main/Pictures/WVC800_HA-Page.png">
 
