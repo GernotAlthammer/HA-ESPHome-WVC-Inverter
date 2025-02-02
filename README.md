@@ -20,6 +20,12 @@ The code can cover the following WVC Inverter models of the "Wireless Series R3"
 - WVC-2400W-Life
 - WVC-2800W-Life
 
+The ESP-07S code incudes
+
+- a Web-Server interface for Online status and OTA
+- a WiFi Fallback Hotspot" to setup Wifi network logon data in your W-LAN
+- a Home Assistant service "write_uart0" to send commands to the interters microcontroller
+
 <h3 tabindex="-1" class="heading-element" dir="auto">Notes</h3>
 I'm working on this project as a hobby. My work on this software is in no way associated with a company. If you like to use it, or improve on it, feel free. Use it at your own risk - it might work perfectly or it might not.
 
