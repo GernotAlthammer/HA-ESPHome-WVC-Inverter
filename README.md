@@ -31,6 +31,12 @@ The ESP-07S code incudes
 - a WiFi Fallback Hotspot" to setup Wifi network logon data in your W-LAN
 - a Home Assistant service "write_uart0" to send commands to the interters microcontroller
 
+For the WVC micro inverters several users have reported unstable network communication and other unstable situations. Many of those problems are related to an uncontrolled overheating of the HF-LPT270 WiFi module.
+The Wifi module does also create additional heat and is not conencted to any cooling elements inside the inverter housing.
+Therefore it is strongly recommended to add as many thermal pads onto the module that are needed to get connection to the aluminium housing lid.
+This helps to provide enought cooling to the module to prevent from overheating during normal operations.
+
+
 <h3 tabindex="-1" class="heading-element" dir="auto">Notes</h3>
 I'm working on this project as a hobby. My work on this software is in no way associated with a company. If you like to use it, or improve on it, feel free. Use it at your own risk - it might work perfectly or it might not.
 
