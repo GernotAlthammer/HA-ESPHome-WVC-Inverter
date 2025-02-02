@@ -10,20 +10,13 @@ In the folder <a href="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverte
 That code needs to be changed in some of the default values in order to mach your Inverter model settings.
 
 <h3 tabindex="-1" class="heading-element" dir="auto">Limitations</h3>
-The code can cover the following WVC Inverter models of the "Wireless Series R3"
+The code can cover the following WVC Inverter models of the "Wireless Series R3" with the HF-LPT270 WiFi module.
 
-- WVC-300W-Life
-- WVC-350W-Life
-- WVC-400W-Life
 - WVC-600W-Life
 - WVC-700W-Life
 - WVC-800W-Life
-- WVC-1200W-Life
-- WVC-1400W-Life
-- WVC-1600W-Life
-- WVC-2000W-Life
-- WVC-2400W-Life
-- WVC-2800W-Life
+
+It does not work for the older WVC inverter models with a 433MHz communication module!
 
 The example code for ESP-07S incudes:
 
