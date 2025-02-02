@@ -25,7 +25,7 @@ The code can cover the following WVC Inverter models of the "Wireless Series R3"
 - WVC-2400W-Life
 - WVC-2800W-Life
 
-The code for ESP-07S incudes´:
+The example code for ESP-07S incudes:
 
 - a Web-Server interface for Online status and OTA
 - a WiFi Fallback Hotspot" to setup Wifi network logon data in your W-LAN
