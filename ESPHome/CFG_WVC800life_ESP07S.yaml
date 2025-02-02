@@ -1,0 +1,1204 @@
+### 2024-02-02 Initial Configuration of ESP07S board
+### 2024-02-02 Setup UART with 115000 baud / Hardware Serial TX = GPIO1/TXD RX= GPIO3/RXD wird verwendet
+### 2024-02-28 Setup of WVC inverter Interface via UART
+### 2024-02-28 Update Channel and Model selection output to text sensors
+### 2024-03-12 Update of message text scanning
+### 2024-04-13 Update of message scanning - cover both power switch valure 1 or 0
+### 2024-04-17 Update of accuracy_decimal
+### 2024-04-19 Added Eficiency sensor (Output/PV power)
+### 2ß24-04-20 Added filer clamp to ignore values outside of defined min/max 
+### 2024-04-21 Anpassung PV-Leistung, PV-Spannung, AC-Current und Output Power mit Faktor 1.26 (gemessen mit TUYA-Plug)
+### 2024-04-22 Added Initialisation of sensor values after Home Assitant API connection is done
+### 2024-04-29 Added Status text sensor and Start Time Count-Down
+### 2024-06-29 Update OTA for ESPhome V6
+### 2024-07-23 Anpassung Spannung, Strom und Leistung mit Faktor 1.15 (Voltage) * 1.15 (Current) bei WVC800
+### 2025-01-25 Anpassung Spannung + Strom Messwerte PV und AC über Eingabefelder
+###
+# These substitutions allow the end user to override certain values
+substitutions:
+  name: "wvc800"
+  friendly_name: "WVC800"
+
+esphome:
+  name: "${name}"
+  comment: "${friendly_name} Micro Inverter - ESP-07S"
+  # Friendly names are used where appropriate in Home Assistant
+  friendly_name: "${friendly_name}"
+  # Automatically add the mac address to the name
+  # so you can use a single firmware for all devices
+  #name_add_mac_suffix: true
+
+  # This will allow for (future) project identification,
+  # configuration and updates.
+  project:
+    name: "${friendly_name} Micro Inverters.ESP-07S WLAN"
+    version: "1.0"
+  
+  # Flshing Option to ensure ESP-07S boots correctly
+  platformio_options:
+    board_build.flash_mode: dout
+    board_build.f_flash: 40000000L
+
+  # Include UART reading procedure
+  includes:
+    - uart_read_line_sensor.h
+
+  on_boot:
+    - priority: 600
+      then:
+        - lambda:
+            ESP_LOGD("main", "${friendly_name} Boot ongoing" );
+
+
+esp8266:
+  board: esp07s
+  restore_from_flash: true
+
+# Example configuration entry
+preferences:
+  flash_write_interval: 10min # default is 1min
+
+# enabel Web Server Interface
+web_server:
+  port: 80
+  version: 2
+  log: false
+  auth:
+    username: "${name}"
+    password: "${name}"
+
+
+#### Enable logging
+logger:
+  baud_rate: 0     # Disable UART logging if the UART0 pins GPIO1/3 are used for RS232 communication
+  #level: VERBOSE
+  #level: VERY_VERBOSE
+
+
+#### Enable Home Assistant API ###################################
+api:
+  encryption:
+    key: "XWJFVrP8hAlJyZC/e30e159ERIjPcTFQtDwrOF5QT24="
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### Home Assist API Verbindung hergestellt ####################
+  on_client_connected:
+    - uart.write:
+       id: ${name}_uart0
+       data: !lambda |-
+        char textsend[40];
+        sprintf(textsend, "+ILOPCONNECT=SERVER_CONNECT\\r\\n" );
+        std::string s = textsend;
+        id(raw_string_tx).publish_state(textsend); 
+        id(wvc_state_msg).publish_state("${friendly_name} mit HA verbunden");
+        ESP_LOGD("main", "Client %s connected to API with IP %s", client_info.c_str(), client_address.c_str() );
+        return std::vector<unsigned char>( s.begin(), s.end() );
+        // "+ILOPCONNECT=SERVER_CONNECT\r\n"
+    ### Initialisiere Messwerte mit 0
+    - sensor.template.publish:
+        id: output_power
+        state: 0.0
+    - sensor.template.publish:
+        id: ac_current
+        state: 0.0
+    - sensor.template.publish:
+        id: pv_power
+        state: 0.0
+    - sensor.template.publish:
+        id: pv_current
+        state: 0.0
+    - sensor.template.publish:
+        id: efficiency
+        state: 0.0
+    - sensor.template.publish:
+        id: act_power_limit
+        state: !lambda 'return id(gl_power_limit);'
+    - sensor.template.publish:
+        id: act_start_time
+        state: !lambda 'return id(gl_start_time);'
+    - sensor.template.publish:
+        id: act_derate_temp
+        state: !lambda 'return id(gl_derate_temp);'
+    - sensor.template.publish:
+        id: act_zero_power_adj
+        state: !lambda 'return id(gl_zero_power_adj);'
+    - binary_sensor.template.publish:
+        id: power_generation
+        state: !lambda 'return id(gl_power_generation);'
+
+
+# Serielle Schnittstelle schreiben
+  services:
+    ## UART0 Hardware Serial TX = GPIO1/TXD RX= GPIO3/RXD
+    - service: write_uart0
+      variables:
+        command: string
+      then:
+# Write Command
+        - uart.write:
+            id: ${name}_uart0
+            data: !lambda |-
+              std::string str = command;
+              std::vector<uint8_t> vec(str.begin(), str.end());
+              id(raw_string_tx).publish_state(str.c_str());
+              return vec;
+
+
+#### Over The Air ################################################
+ota:
+  platform: esphome
+  password: "6c18d8f866f6c4b839bb96fa77efa28f"
+
+
+wifi:
+  power_save_mode: none
+  networks:
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+  - ssid: !secret wifi_ssid_2
+    password: !secret wifi_password_2
+  use_address: ${name}.local
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${name} Fallback Hotspot"
+    #password: "hvM0OmBeJTty" # No password
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### WIFI Verbindung hergestellt ###############################
+  on_connect:
+    - uart.write:
+       id: ${name}_uart0
+       data: !lambda |-
+        char textsend[40];
+        sprintf(textsend, "+ILOPCONNECT=WIFI_CONNECT\\r\\n" );
+        std::string s = textsend;
+        id(raw_string_tx).publish_state(textsend); 
+        ESP_LOGD("main", "${friendly_name} WiFi Connected" );
+        return std::vector<unsigned char>( s.begin(), s.end() );
+        // "+ILOPCONNECT=WIFI_CONNECT\r\n"
+
+
+captive_portal:
+
+
+#### TIMER INTERVALS #############################################
+interval:
+  ### Count-Down timer zur Anzeige des Betriebszustands
+  - interval: 1s
+    then:
+      - lambda: |-
+          char str[50];
+          int counter;
+          if (id(count_down) > 0) {
+            counter = id(count_down) - 1;
+            sprintf(str, "Einspeisung startet in %i s", counter);
+            id(count_down) = counter;
+            id(wvc_state_msg).publish_state(str);
+          } else {
+            if (id(output_power).state == 0) {
+              if (id(rx_state) ) {
+                id(wvc_state_msg).publish_state("Wartemodus vor Einspeisung");
+              } else {
+                id(wvc_state_msg).publish_state("Anlauf der Einspeisung");
+              }
+            } else {
+              id(wvc_state_msg).publish_state("MPP-Regler aktiv");
+            }
+          }
+
+  ### Lebenszeichen-Trigger für Daten-Empfang der Seriellen Schnittstelle
+  - interval: 10s  ## Nach 10 Sekunden zurücksetzen
+    then:
+      - lambda: |-
+          if (id(rx_state) ) {
+            id(rx_state) = false;
+          }
+
+
+#### UART ########################################################
+#### Serielle Schnittstelle UART übe GPIOs #######################
+#### Hardware Serial TX = GPIO1/TXD RX= GPIO3/RXD --> bei ESP-07S66 und ES32 --> wird verwendet
+
+#### UART ########################################################
+#### Serielle Schnittstelle UART übe GPIOs #######################
+uart:
+  id: ${name}_uart0
+  tx_pin:
+    number: GPIO1 # TXD Hardware Serial GPIO1
+  rx_pin:
+    number: GPIO3 # RXD Hardware Serial
+  baud_rate: 115200
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  #rx_buffer_size: 512 # Default buffer size is 256 byte, aber nur bei Software Serial
+  #newline: "\r\n"
+  debug:
+    direction: RX # zum Auslesen der Daten
+    #direction: BOTH # nur zu Debugging-Zwecken
+    dummy_receiver: true
+    #after:
+    #  delimiter: "\r\n\r\n"
+      #timeout: 300ms # default is 100ms
+
+    sequence:
+      - lambda: |-
+          UARTDebug::log_string(direction, bytes);  //Still log the data
+              
+          // ### Example to convert uart text to string
+          std::string str(bytes.begin(), bytes.end());
+          
+          // ### Convert it to data-string
+          String data = str.c_str();
+
+          // ### Parse the received string
+          char property[30];
+          char rx1_buffer[512];
+
+          // ### Variablen für Text Scan mit Funktion strok()
+          char rx2_buffer[512];
+          sprintf(rx2_buffer,"%s", data.c_str() );
+          const char delimiter[] = ",";
+          // ## Initialize variables to store sensor values Kurze Datenübertragung
+          bool power_switch = false;
+          float day_energy = 0.0;
+          float plant = 0.0;
+          float emission = 0.0;
+          int time = 0;
+          int p_adj = 0;
+          int temp_set = 0;
+
+          // ## Initialize variables to store sensor values Lange Datenübertragung
+          float f_pv_volt = 0.0;
+          float f_pv_current = 0.0;
+          float f_pv_power = 0.0;
+          float f_ac_volt = 0.0;
+          float f_ac_current = 0.0;
+          float f_out_power = 0.0;
+          float f_temperature = 0.0;
+          int i_power_adj = 0;
+          float f_total_energy = 0.0;
+
+          // ### Lebenszeichen-Trigger für Daten-Empfang der Seriellen Schnittstelle
+          if (id(rx_state) == false ) {
+            id(rx_state) = true;
+          }
+
+          // ################## Scan der kurzen Datenübertragung WVC-600 ############################
+          // ### Standard Daten (ohne Daily Energy)
+          // ### Check for key word Plant
+          if ( data.startsWith("AT+SENDICA=property,,PowerSwitch,1,Plant") || data.startsWith("AT+SENDICA=property,,PowerSwitch,0,Plant") || data.startsWith("AT+SENDICA=property,,PowerSwitch,1,Day_Energy") || data.startsWith("AT+SENDICA=property,,PowerSwitch,0,Day_Energy") || data.startsWith("AT+SENDICA=property,PowerSwitch,1,Plant") || data.startsWith("AT+SENDICA=property,PowerSwitch,0,Plant") || data.startsWith("AT+SENDICA=property,PowerSwitch,1,Day_Energy") || data.startsWith("AT+SENDICA=property,PowerSwitch,0,Day_Energy") ) {              
+                        
+            // ################# NEUE FUNKTION #################
+            // ### Split the input_text using strtok()
+            char* token = strtok(rx2_buffer, delimiter);
+            while (token != nullptr) {
+              if (strcmp(token, "PowerSwitch") == 0) {
+                  // Next token is the value for PowerSwitch (bool)
+                  token = strtok(nullptr, delimiter);
+                  power_switch = (strcmp(token, "1") == 0);
+              } else if (strcmp(token, "Day_Energy") == 0) {
+                  // Next token is the value for Day_Energy (float)
+                  token = strtok(nullptr, delimiter);
+                  day_energy = atof(token);
+              } else if (strcmp(token, "Plant") == 0) {
+                  // Next token is the value for Plant (float)
+                  token = strtok(nullptr, delimiter);
+                  plant = atof(token);
+              } else if (strcmp(token, "Emission") == 0) {
+                  // Next token is the value for Emission (float)
+                  token = strtok(nullptr, delimiter);
+                  emission = atof(token);
+              } else if (strcmp(token, "Time") == 0) {
+                  // Next token is the value for Time (int)
+                  token = strtok(nullptr, delimiter);
+                  time = atoi(token);
+              } else if (strcmp(token, "P_adj") == 0) {
+                  // Next token is the value for P_adj (int)
+                  token = strtok(nullptr, delimiter);
+                  p_adj = atoi(token);
+              } else if (strcmp(token, "TEMP_SET") == 0) {
+                  // Next token is the value for TEMP_SET (int)
+                  token = strtok(nullptr, delimiter);
+                  temp_set = atoi(token);
+              }
+
+              // ### Get the next token
+              token = strtok(nullptr, delimiter);
+            }
+
+            // ### Update the sensors with the extracted values
+            if ( power_switch == 0 ) {                
+              id(power_generation).publish_state(false);
+            } else {
+              if ( power_switch == 1) {
+                id(power_generation).publish_state(true);
+              }
+            }
+            id(inv_daily_energy).publish_state(day_energy);
+            id(plant_trees).publish_state(plant);
+            id(inv_emmissions).publish_state(emission);
+            if ( time <= 600 ) {
+              id(act_start_time).publish_state(time);
+            }
+            id(act_zero_power_adj).publish_state(p_adj);
+            if ( temp_set <= 100 && temp_set >= 50 ) {
+              id(act_derate_temp).publish_state(temp_set);
+            }
+          }
+
+
+          // ################## Scan der langen Datenübertragung ############################
+          if ( data.startsWith("AT+SENDICA=property,PV_Volt") ) {
+            // ### Check if the RX buffer is empty and add the 1st part of the message
+            if ( id(rx1_string).empty() == true ) {
+              id(rx1_string) = data.c_str();
+            }
+          }
+          // ################## Scan des kurzen Datenübertragung ############################
+          if ( data.startsWith("AT+SENDICA=property,PV_Volt") == false ) {
+            if ( data.startsWith("AT+SENDICA=property,PowerSwitch,1,Plant") == false ) {
+              // ### Check if the RX buffer is not empty and add teh 2nd part of the message
+              if ( id(rx1_string).empty() == false ) {
+                sprintf(rx1_buffer,"%s%s", id(rx1_string).c_str(), data.c_str() );
+                // ### Werte aus dem zusammengesetzten String herauslesen
+
+                // ################# NEUE FUNKTION #################
+                // ### Split the input_text using strtok()
+                char* token = strtok(rx1_buffer, delimiter);
+                while (token != nullptr) {
+                  if (strcmp(token, "PV_Volt") == 0) {
+                      // Next token is the value for PV_Volt (float)
+                      token = strtok(nullptr, delimiter);
+                      f_pv_volt = atof(token);
+                  } else if (strcmp(token, "PV_Current") == 0) {
+                      // Next token is the value for PV_Current (float)
+                      token = strtok(nullptr, delimiter);
+                      f_pv_current = atof(token);
+                  } else if (strcmp(token, "PV_Power") == 0) {
+                      // Next token is the value for PV_Power (float)
+                      token = strtok(nullptr, delimiter);
+                      f_pv_power = atof(token);
+                  } else if (strcmp(token, "AC_Volt") == 0) {
+                      // Next token is the value for AC_Volt (float)
+                      token = strtok(nullptr, delimiter);
+                      f_ac_volt = atof(token);
+                  } else if (strcmp(token, "AC_Current") == 0) {
+                      // Next token is the value for AC_Current (float)
+                      token = strtok(nullptr, delimiter);
+                      f_ac_current = atof(token);
+                  } else if (strcmp(token, "Out_Power") == 0) {
+                      // Next token is the value for Out_Power (float)
+                      token = strtok(nullptr, delimiter);
+                      f_out_power = atof(token);
+                  } else if (strcmp(token, "Temperature") == 0) {
+                      // Next token is the value for Temperature (float)
+                      token = strtok(nullptr, delimiter);
+                      f_temperature = atof(token);
+                  } else if (strcmp(token, "Power_adjustment") == 0) {
+                      // Next token is the value for Power_adjustment (int)
+                      token = strtok(nullptr, delimiter);
+                      i_power_adj = atoi(token);
+                  } else if (strcmp(token, "Energy") == 0) {
+                      // Next token is the value for Energy (float)
+                      token = strtok(nullptr, delimiter);
+                      f_total_energy = atof(token);
+                  }
+
+                  // ### Get the next token
+                  token = strtok(nullptr, delimiter);
+                }
+
+                // ### Update the sensors with the extracted values
+
+                // ### Update individual sensors         
+                id(pv_voltage).publish_state(f_pv_volt);
+                id(pv_current).publish_state(f_pv_current);
+                id(pv_power).publish_state(f_pv_power);
+                id(ac_voltage).publish_state(f_ac_volt);
+                id(ac_current).publish_state(f_ac_current);
+                id(output_power).publish_state(f_out_power);
+                if (f_temperature < 120 ) {
+                  id(inv_temperature).publish_state(f_temperature);
+                }              
+                if ( i_power_adj <= 100 ) {
+                  id(act_power_limit).publish_state(i_power_adj);
+                }
+                id(inv_total_energy).publish_state(f_total_energy);
+                // ### Clear the RX buffer string after all values were updated
+                id(rx1_string) = "";
+
+              }
+            }
+          }       
+
+
+#### NUMBER ######################################################
+number:
+
+  #### Parameter Wechselrichter ##################################
+  - platform: template
+    name: "Set Start Time"
+    entity_category: config
+    icon: mdi:timer-outline
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    unit_of_measurement: "s"
+    id: start_time
+    min_value: 0
+    max_value: 600
+    step: 10
+    mode: box
+    on_value:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[40];
+            int selected = x;
+            id(count_down) = selected + 5; // extra 5 Sekunden als Vorlauf
+            id(act_start_time).publish_state(selected);
+            sprintf(textsend, "+ILOPDATA=ICA,Time,%i\\r\\n", selected );
+            id(raw_string_tx).publish_state(textsend);
+            ESP_LOGD("main", "Selected Start Time %i", selected );
+            std::string s = textsend;
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,Time,50\r\n"
+          
+
+  - platform: template
+    name: "Set Derating Temperature"
+    entity_category: config
+    icon: mdi:thermometer-alert
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    unit_of_measurement: "°C"
+    device_class: temperature
+    id: derate_temp
+    min_value: 50
+    max_value: 100
+    step: 1
+    mode: box
+    on_value:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[40];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,TEMP_SET,%i\\r\\n", selected );
+            id(raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected TEMP_SET %i", selected );
+            std::string s = textsend;
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,TEMP_SET,56\r\n"
+
+
+  - platform: template
+    name: "Set 0 Power ADJ"
+    entity_category: config
+    icon: mdi:cog
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    unit_of_measurement: "W"
+    device_class: power
+    id: zero_power_adj
+    min_value: 0
+    max_value: 500
+    step: 1
+    mode: box
+    on_value:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[40];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,P_adj,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Zero Power Adjustment %i", selected );
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,P_adj,80\r\n"
+
+
+  - platform: template
+    name: "Set Power ADJ"
+    id: power_limit
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    unit_of_measurement: "%"
+    device_class: power_factor
+    icon: mdi:tune
+    min_value: 1
+    max_value: 100
+    step: 1
+    mode: box
+    on_value:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[60];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,Power_adjustment,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Output Power Adjustment %i", selected );
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,Power_adjustment,50\r\n"
+
+  #### Anpassung Spannung + Strom Messwerte PV und AC ############
+  #### Anpassung PV Spannung
+  - platform: template
+    name: "PV Voltage Adjust"
+    id: pv_v_adjust
+    entity_category: config
+    initial_value: 1.00
+    min_value: 0.50
+    max_value: 1.50
+    restore_value: true
+    optimistic: true
+    step: 0.01
+    mode: box
+
+  #### Anpassung PV Strom
+  - platform: template
+    name: "PV Current Adjust"
+    id: pv_c_adjust
+    entity_category: config
+    initial_value: 1.00
+    min_value: 0.50
+    max_value: 1.50
+    restore_value: true
+    optimistic: true
+    step: 0.01
+    mode: box
+
+  #### Anpassung PV Leistung
+  - platform: template
+    name: "PV Power Adjust"
+    id: pv_p_adjust
+    entity_category: config
+    initial_value: 1.00
+    min_value: 0.50
+    max_value: 1.50
+    restore_value: true
+    optimistic: true
+    step: 0.01
+    mode: box
+
+  #### Anpassung AC Spannung
+  - platform: template
+    name: "AC Voltage Adjust"
+    id: ac_v_adjust
+    entity_category: config
+    initial_value: 1.00
+    min_value: 0.50
+    max_value: 1.50
+    restore_value: true
+    optimistic: true
+    step: 0.01
+    mode: box
+
+  #### Anpassung AC Strom
+  - platform: template
+    name: "AC Current Adjust"
+    id: ac_c_adjust
+    entity_category: config
+    initial_value: 1.00
+    min_value: 0.50
+    max_value: 1.50
+    restore_value: true
+    optimistic: true
+    step: 0.01
+    mode: box
+
+  #### Anpassung AC Leistung
+  - platform: template
+    name: "AC Power Adjust"
+    id: ac_p_adjust
+    entity_category: config
+    initial_value: 1.00
+    min_value: 0.50
+    max_value: 1.50
+    restore_value: true
+    optimistic: true
+    step: 0.01
+    mode: box
+
+
+
+#### SELECT ######################################################
+select:
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### Auswahl des Channel #######################################
+  - platform: template
+    name: "Set Channel"
+    id: slave_channel
+    entity_category: config
+    options:
+      - "Channel 0"
+      - "Channel 1"
+      - "Channel 2"
+      - "Channel 3"
+      - "Channel 4"
+    initial_option: "Channel 2"
+    optimistic: true
+    restore_value: true
+    internal: false
+    icon: mdi:lan
+    on_value:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[40];
+            int selected = i;
+            sprintf(textsend, "+ILOPDATA=ICA,Channel,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(raw_string_tx).publish_state(textsend);
+            sprintf(textsend, "Channel %i", selected );
+            id(wvc_channel).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Channel %i", selected );         
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            //"+ILOPDATA=ICA,Channel,%d\r\n", index.value()
+
+  #### Auswahl des Models ########################################
+  - platform: template
+    name: "Set Model"
+    id: inv_model
+    entity_category: config
+    options:
+      - "WVC300W"
+      - "WVC350W"
+      - "WVC400W"
+      - "WVC600W"
+      - "WVC700W"
+      - "WVC800W"
+      - "WVC1200W"
+      - "WVC1400W"
+      - "WVC1600W"
+      - "WVC2000W"
+      - "WVC2400W"
+      - "WVC2800W"
+    initial_option: "WVC800W"
+    optimistic: true
+    restore_value: true
+    icon: mdi:monitor
+    on_value:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[40];
+            int selected = i;
+            id(count_down) = id(act_start_time).state + 5; // extra 5 Sekunden als Vorlauf
+            sprintf(textsend, "+ILOPDATA=ICA,Model,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(raw_string_tx).publish_state(textsend);
+            sprintf(textsend, "%s", x.c_str() );
+            id(wvc_model).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Model %i", selected );         
+            return std::vector<unsigned char>( s.begin(), s.end() );        
+            // "+ILOPDATA=ICA,Model,11\r\n"
+
+
+#### SWITCH ######################################################
+switch:
+  # Nestart des ESP07S
+  - platform: restart
+    name: "Restart"
+
+
+#### BUTTON ######################################################
+button:
+  
+  #################### WVC INTERFACE #############################
+  ###
+  #### PV-Wechselrichter Button
+  - platform: template
+    name: "Power ON/OFF"
+    id: power_on_off
+    icon: mdi:power
+    on_press:
+      - if:
+          condition:
+            # Same syntax for is_off
+            binary_sensor.is_off: power_generation
+          then:
+            # Wenn Einspeissung aus ist, dann einschalten und Timer starten
+            - uart.write:
+                id: ${name}_uart0
+                data: !lambda |-
+                  char textsend[40];
+                  sprintf(textsend, "+ILOPDATA=ICA,PowerSwitch,1\\r\\n" );
+                  std::string s = textsend;
+                  id(raw_string_tx).publish_state(textsend);
+                  id(power_generation).publish_state(true); 
+                  return std::vector<unsigned char>( s.begin(), s.end() );
+            - logger.log: "Switch Turned On!"
+            - lambda: |-
+                id(count_down) = id(act_start_time).state + 5; // extra 5 Sekunden als Vorlauf
+            - logger.log: "Start Time count-down started!"
+   
+          else:
+            # Wenn Einspeisung ein ist, dann ausschalten und Timer zurücksetzen
+            - uart.write:
+                id: ${name}_uart0
+                data: !lambda |-
+                  char textsend[40];
+                  sprintf(textsend, "+ILOPDATA=ICA,PowerSwitch,0\\r\\n" );
+                  std::string s = textsend;
+                  id(raw_string_tx).publish_state(textsend); 
+                  id(power_generation).publish_state(false); 
+                  return std::vector<unsigned char>( s.begin(), s.end() );
+            - logger.log: "Switch Turned Off!"
+            - lambda: |-
+                if (id(count_down) > 0) {
+                  id(count_down) = 0;
+                  id(wvc_state_msg).publish_state("Einspeisung angehalten");
+                }
+            - logger.log: "Start Time count-down stopped!"
+
+
+  #### Reset of total energy
+  - platform: template
+    name: "Energy Clear"
+    id: energy_clear
+    icon: mdi:broom
+    on_press:
+      - uart.write:
+          id: ${name}_uart0
+          data: !lambda |-
+            char textsend[40];
+            static int clickCount = 0;
+            clickCount++;
+            if (clickCount == 1) {
+              sprintf(textsend, "+ILOPDATA=ICA,Energy_Cleared,1\\r\\n" );
+            }  
+            if (clickCount == 2) {
+              sprintf(textsend, "+ILOPDATA=ICA,Energy_Cleared,0\\r\\n" );
+              clickCount = 0; // Reset the counter
+            }
+            std::string s = textsend;
+            id(raw_string_tx).publish_state(textsend); 
+            return std::vector<unsigned char>( s.begin(), s.end() );
+
+            // "+ILOPDATA=ICA,Energy_Cleared,1\r\n"
+            // "+ILOPDATA=ICA,Energy_Cleared,0\r\n"
+
+
+#### BINARY SENSOR ###############################################
+binary_sensor:
+  # Status der WIFI Schnittstelle
+  - platform: status
+    name: "WiFi Status"
+    id: wifi_status
+    icon: mdi:router-wireless
+
+  # Status der Energie-Produktion EIN/AUS
+  - platform: template
+    name: "Power Generation"
+    id: power_generation
+    icon: mdi:power
+    on_state:
+      then:
+        - lambda: |- 
+            id(gl_power_generation) = id(power_generation).state;
+
+  # Helper for Power-Adjust value correction 10 vs 100
+  # ON = 10 % Adjust
+  # OFF = 100 % Adjust
+  - platform: template
+    name: PWRAJ
+    id: pwr_adjust
+    internal: true
+
+
+#### GLOBALS #####################################################
+globals:
+  ### Globale string variable für UART1 RX String
+  - id: rx1_string
+    type: std::string
+    restore_value: no
+    max_restore_data_length: 254
+    initial_value: ""
+
+  ### Countdown wenn Einspeisung neu gestartet wird
+  - id: count_down
+    type: int
+    restore_value: no
+    initial_value: '0'
+  
+  ### Lebenszeichen-Flag zur Überwachung des Datenemfangs über UART
+  - id: rx_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+
+  ### Globale Werte welche im Flash gespeichert werden sollen
+  - id: gl_power_limit
+    type: int
+    restore_value: true
+    initial_value: '1'      # Standard ist 100 - für Test Zwecke erstmal 1
+
+  - id: gl_start_time
+    type: int
+    restore_value: true
+    initial_value: '60'
+
+  - id: gl_derate_temp
+    type: int
+    restore_value: true
+    initial_value: '65'
+
+  - id: gl_zero_power_adj
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  - id: gl_power_generation
+    type: bool
+    restore_value: true
+    initial_value: 'true'
+
+
+#### SENSOR ######################################################
+sensor:
+
+  #################### WVC INTERFACE #############################
+  ###
+  ############ PV-Wechselrichter Sensor-Werte ####################
+  #
+  ### PV Spannung
+  - platform: template
+    name: "PV Voltage"
+    id: pv_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: voltage
+    state_class: measurement
+    filters:
+      - clamp:
+          max_value: 75  # WVC800 Max Voltage allowed is only 60 Volt
+          ignore_out_of_range: true
+      # Anpassung mit Faktor 1.15 bei WVC800 
+      - lambda: return x * id(pv_v_adjust).state;
+  #
+  ### PV Stom
+  - platform: template
+    name: "PV Current"
+    id: pv_current
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: current
+    state_class: measurement
+    filters:
+      - clamp:
+          max_value: 24  # WVC800 Max Shortcut-Current allowed is only 20 Amp
+          ignore_out_of_range: true
+      # Anpassung mit Faktor 1.15 bei WVC800 
+      - lambda: return x * id(pv_c_adjust).state;
+  #
+  ### PV Leistung
+  - platform: template
+    name: "PV Power"
+    id: pv_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: power
+    state_class: measurement
+    filters:
+      - clamp:
+          max_value: 1200  # WVC800 Max Input Power allowed is only 1000 Watt
+          ignore_out_of_range: true
+      # Anpassung mit Faktor 1.15 (Voltage) * 1.15 (Current) bei WVC800 
+      - lambda: return x * id(pv_p_adjust).state;
+  #
+  ### AC Spannung
+  - platform: template
+    name: "AC Voltage"
+    id: ac_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: voltage
+    state_class: measurement
+    filters:
+      - clamp:
+          max_value: 270  # WVC800 nominal Output Voltage is only 265 Volt
+          ignore_out_of_range: true
+      # Anpassung mit Faktor 1.0 bei WVC800 
+      - lambda: return x * id(ac_v_adjust).state;
+  #
+  ### AC Strom
+  - platform: template
+    name: "AC Current"
+    id: ac_current
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: current
+    state_class: measurement
+    filters:
+      - clamp:
+          max_value: 10  # WVC800 Max AC Current allowed is only 6.6 Amp at 110 Volt
+          ignore_out_of_range: true
+      # Anpassung mit Faktor 1.15 (Current) bei WVC800 
+      - lambda: return x * id(ac_c_adjust).state;
+  #
+  ### AC Leistung
+  - platform: template
+    name: "Output Power"
+    id: output_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: power
+    state_class: measurement
+    filters:
+      - clamp:
+          max_value: 1000  # WVC800 Max Voltage allowed is only 800 Watt
+          ignore_out_of_range: true
+      # Anpassung mit Faktor 1.15 bei WVC800 
+      - lambda: return x * id(ac_p_adjust).state;
+  #
+  ### Temperatur
+  - platform: template
+    name: "Temperature"
+    id: inv_temperature
+    unit_of_measurement: "°C"
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+    device_class: temperature
+    state_class: measurement
+    filters:
+      - clamp:
+          min_value: -30  # WVC800 Min Operating Environment Temperature is only -50
+          max_value: 150  # WVC800 Max Temperature for electronic components is only 120 Degree C
+          ignore_out_of_range: true
+  #
+  ### Tages-Energie
+  - platform: template
+    name: "Daily Energy"
+    id: inv_daily_energy
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: energy
+    state_class: total_increasing
+    filters:
+      - clamp:
+          min_value: 0 # No negative values
+          ignore_out_of_range: true
+  #
+  ### Gesant-Energie
+  - platform: template
+    name: "Total Energy"
+    id: inv_total_energy
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: energy
+    state_class: total_increasing
+  #
+  ### Gepflanzte Bäume
+  - platform: template
+    name: "Planting trees"
+    id: plant_trees
+    unit_of_measurement: "pcs"
+    accuracy_decimals: 2
+    icon: "mdi:forest"
+    state_class: total_increasing
+    filters:
+      - clamp:
+          min_value: 0 # No negative values
+          ignore_out_of_range: true
+  #
+  ### CO2 Reduktion
+  - platform: template
+    name: "C02 reduction"
+    id: inv_emmissions
+    unit_of_measurement: "t"
+    accuracy_decimals: 2
+    icon: "mdi:leaf"
+    state_class: total_increasing
+    filters:
+      - clamp:
+          min_value: 0 # No negative values
+          ignore_out_of_range: true
+    
+  ### Einstell-Parameter
+  #
+  ### Wechselrichter Anlauf Start-Zeit
+  - platform: template
+    name: "Start Time"
+    id: act_start_time
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    icon: mdi:timer-outline
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 600
+          ignore_out_of_range: true
+    on_value:
+      then:
+        - lambda: |- 
+            id(gl_start_time) = id(act_start_time).state;
+  #
+  ### Wechselrichter Derating Temperatur
+  - platform: template
+    name: "Derating Temperature"
+    icon: mdi:thermometer-alert
+    unit_of_measurement: "°C"
+    accuracy_decimals: 0
+    device_class: temperature
+    id: act_derate_temp
+    filters:
+      - clamp:
+          min_value: 50
+          max_value: 100
+          ignore_out_of_range: true
+    on_value:
+      then:
+        - lambda: |- 
+            id(gl_derate_temp) = id(act_derate_temp).state;
+  #
+  ### Wechselrichter Null-Eispeisung
+  - platform: template
+    name: "Zero Power ADJ"
+    icon: mdi:cog
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    device_class: power
+    id: act_zero_power_adj
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 500
+          ignore_out_of_range: true
+    on_value:
+      then:
+        - lambda: |- 
+            id(gl_zero_power_adj) = id(act_zero_power_adj).state;
+  #
+  ### Wechselrichter Limit Ausgangsleistung
+  - platform: template
+    name: "Power Limit"
+    id: act_power_limit
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    device_class: power_factor
+    icon: mdi:tune
+    filters:
+      - clamp:
+          min_value: 0
+          max_value: 100
+          ignore_out_of_range: true
+  #
+  ### Wechselrichter Effizienz
+  - platform: template
+    name: "Efficiency"
+    id: efficiency
+    unit_of_measurement: '%'
+    #update_interval: 5s
+    lambda: |-
+      if (id(pv_power).state == 0.0 || id(output_power).state == 0.0) {
+        return {};
+      } else {
+        return (id(output_power).state / id(pv_power).state) * 100.0;
+      }
+
+  ### WiFi Sensorem
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal"
+    id: ${name}_strength
+    update_interval: 60s
+    entity_category: "diagnostic"
+    icon: 'mdi:signal-cellular-1'
+    
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: ${name}_strength
+    name: "WiFi Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    icon: 'mdi:signal-cellular-2'
+
+  # Versorgugsspannung messen
+  - platform: adc
+    pin: VCC
+    name: "VCC Spannung"
+    update_interval: 60s
+    id: ${name}_spannung
+    entity_category: "diagnostic"
+
+
+#### TEXT SENSOR #################################################
+text_sensor:
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### Anzeige des Channel #######################################
+  - platform: template
+    name: "WVC Channel"
+    id: wvc_channel
+    icon: mdi:lan
+    #entity_category: config
+
+  #### Auswahl des Models ########################################
+  - platform: template
+    name: "WVC Model"
+    id: wvc_model
+    icon: mdi:monitor
+    #entity_category: config
+
+
+  #### Anzeige des Betriebszustands ##############################
+  - platform: template
+    name: "WVC State"
+    id: wvc_state_msg
+    icon: mdi:information-box-outline
+
+
+  # Local WiFi Info as Text-Sensor
+  - platform: wifi_info
+    ip_address:
+      name: "Address"
+    ssid:
+      name: "Connected SSID"
+    bssid:
+      name: "Connected BSSID"
+    mac_address:
+      name: "Mac Wifi Address"
+    scan_results:
+      name: "Latest Scan Results"
+  # ESP Version
+  - platform: version
+    name: "ESPHome Version"
+
+
+  #### UART0 Raw string Text Sensor
+  ### TX ###
+  - platform: template
+    name: "UART TX"
+    id: raw_string_tx
+
+  #### UART0 Raw string Text Sensor
+  ### RX ###
+  - platform: template
+    name: "UART RX"
+    id: raw_string
+
+#### END OF CODE ####
