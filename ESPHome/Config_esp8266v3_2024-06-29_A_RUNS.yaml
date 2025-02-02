@@ -1,0 +1,1131 @@
+### 2024-02-15 Initial ESP8266 V3 Setup witch board type  nodemcuv2 und 160 MHz option
+### 2024-02-15 Added On-Board Blue LED and Restart-Button
+### 2024-02-15 Added alternative WLAN-2 SSID
+### 2024-02-15 Added Web Server
+### 2024-02-15 Added VCC voltage sensor
+### 2024-02-02 Setup UART with 115000 baud
+### 2024-02-23 Über UART1 Kommunikation mit WVC Umrichter (aktuelle Werte auslesen, neue Einstellungen übermitteln)
+### 2024-02-24 Eingabeparameter WVC erstellt
+### 2024-02-27 Anpassung Datenformat für kurze Nachricht an WVC-800 Protokoll
+### 2024-02-28 Update Channel and Model selection output to text sensors 
+### 2024-06-29 Update OTA for ESPhome V6
+###
+esphome:
+  name: esp8266v3
+  friendly_name: ESP8266V3
+  platformio_options:
+    # Change CPU speed from 80 MHz to 160 MHz
+    board_build.f_cpu: 80000000L # Original 80 MhZ
+  #  board_build.f_cpu: 160000000L # Erweitert 160 MHz
+
+  # Include UART reading procedure
+  includes:
+    - uart_read_line_sensor.h
+
+
+  on_boot:
+    - priority: 600
+      then:
+        - lambda:
+            uint32_t act_baud = id(esp8266v3_uart0).get_baud_rate();
+            id(esp8266v3_baud).publish_state(act_baud);
+            uint32_t actb_data_bits = id(esp8266v3_uart0).get_data_bits();
+            id(esp8266v3_data_bits).publish_state(actb_data_bits);
+            uint32_t actb_stop_bits = id(esp8266v3_uart0).get_stop_bits();
+            id(esp8266v3_stop_bits).publish_state(actb_stop_bits);
+            uint32_t act_parity = id(esp8266v3_uart0).get_parity();
+            id(esp8266v3_parity_int).publish_state(act_parity);
+
+
+### Wenos D1 Mini V3 mit 4MB Flash
+esp8266:
+  board: nodemcuv2
+
+# enabel Web Server Interface
+web_server:
+  port: 80
+  version: 2
+  log: false
+  auth:
+    username: "esp8266v3"
+    password: !secret web_server_password
+
+# Enable logging
+logger:
+  baud_rate: 0     # Disable UART logging if the UART0 pins GPIO1/3 are used for RS232 communication
+  #level: VERBOSE
+  #level: VERY_VERBOSE
+
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "PV7QO8E3irgyPJyeX0A12cronTpY5j3/aoXEx8th0Zs="
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### Home Assist API Verbindung hergestellt ####################
+  on_client_connected:
+    - uart.write:
+       id: esp8266v3_uart1
+       data: !lambda |-
+        char textsend[40];
+        sprintf(textsend, "+ILOPCONNECT=SERVER_CONNECT\\r\\n" );
+        std::string s = textsend;
+        id(esp8266v3_raw_string_tx).publish_state(textsend); 
+        ESP_LOGD("Connection API", "Client %s connected to API with IP %s", client_info.c_str(), client_address.c_str() );
+        return std::vector<unsigned char>( s.begin(), s.end() );
+
+        // "+ILOPCONNECT=SERVER_CONNECT\r\n"
+
+
+# Serielle Schnittstellen UART0 und UART1 schreiben
+  services:
+    ## UART0 Software Serial TX = GPIO15/D8 RX= GPIO13/D7
+    - service: write_uart0
+      variables:
+        command: string
+      then:
+        # Write Command
+        - uart.write:
+            id: esp8266v3_uart0
+            data: !lambda |-
+              std::string str = command;
+              std::vector<uint8_t> vec(str.begin(), str.end());
+              id(rawString_tx).publish_state(str.c_str());
+              return vec;
+        
+    ## UART1 Software Serial TX = GPIO5/D1 RX= GPIO4/D2
+    - service: write_uart1
+      variables:
+        command: string
+      then:
+        # Write Command
+        - uart.write:
+            id: esp8266v3_uart1
+            data: !lambda |-
+              std::string str = command;
+              std::vector<uint8_t> vec(str.begin(), str.end());
+              id(esp8266v3_raw_string_tx).publish_state(str.c_str());
+              return vec;
+
+
+#### Over The Air ################################################
+ota:
+  platform: esphome
+  password: "f4c2840d8ab905c2639692ed79392c82"
+
+wifi:
+  networks:
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+  - ssid: !secret wifi_ssid_2
+    password: !secret wifi_password_2
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Esp8266V3 Fallback Hotspot"
+    password: "GLiDIV7M4XTf"
+
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### WIFI Verbindung hergestellt ###############################
+  on_connect:
+    - uart.write:
+       id: esp8266v3_uart1
+       data: !lambda |-
+        char textsend[40];
+        sprintf(textsend, "+ILOPCONNECT=WIFI_CONNECT\\r\\n" );
+        std::string s = textsend;
+        id(esp8266v3_raw_string_tx).publish_state(textsend); 
+        ESP_LOGD("Connection WLAN", "WiFi Connected" );
+        return std::vector<unsigned char>( s.begin(), s.end() );
+        // "+ILOPCONNECT=WIFI_CONNECT\r\n"
+
+
+captive_portal:
+
+
+
+
+#### UART ########################################################
+#### Serielle Schnittstelle UART übe GPIOs #######################
+#
+#### UART #0 Hardware Serial TX = GPIO1/TXD RX= GPIO3/RXD --> bei ESP8266 nur 128 byte RX buffer - ist hier zu kurz!!!!!
+#    
+#### UART #1 Software Serial TX = GPIO15/D8/TXD2 und RX= GPIO13/D7/RXD2 --> bei ESP8266 256 byte RX buffer :-)
+#
+#### UART #1 Software Serial TX = GPIO5/D1 RX= GPIO4/D2 --> bei ESP8266 256 byte RX buffer :-)
+
+#### UART ########################################################
+#### Serielle Schnittstelle UART #1 über GPIOs ###################
+uart:
+  - id: esp8266v3_uart0
+    tx_pin:
+      #number: GPIO1 # TXD Hardware Serial
+      number: GPIO15 # TXD2/D8 Sofware Serial
+      #inverted: true
+    rx_pin: 
+      #number: GPIO3 # RXD Hardware Serial
+      number: GPIO13 # RXD2/D7 Software Serial
+      #inverted: true
+
+    baud_rate: 115200
+    data_bits: 8
+    parity: NONE
+    stop_bits: 1
+    rx_buffer_size: 512 # Default buffer size is 256 byte, aber nur bei Software Serial 
+    #newline: "\r\n"
+    debug:
+      direction: RX # zum Auslesen der empfangenen Daten
+      #direction: BOTH # nur zu Debugging-Zwecken
+      dummy_receiver: true
+      after:
+        delimiter: "\n"
+        #timeout: 300ms # default is 100ms
+
+      sequence:
+        - lambda: |-
+            UARTDebug::log_string(direction, bytes);  //Still log the data
+                    
+            //Example to convert uart text to string
+            std::string str(bytes.begin(), bytes.end());
+
+            // Put it to LOG
+            //ESP_LOGD("main", "UART0: %s", str.c_str() );
+            //ESP_LOGD("UART0_RX", "RX0 - Data recieved" );
+
+            //watch for potential problems with non printable or special characters in string
+            //id(rawString).publish_state(str.c_str());
+
+
+  #### Serielle Schnittstelle UART #0 über GPIOs ###################
+  - id: esp8266v3_uart1
+    tx_pin:
+      number: GPIO1 # TXD Hardware Serial
+      #number: GPIO5 # D1 Software Serial
+      #inverted: true
+    rx_pin: 
+      number: GPIO3 # RXD Hardware Serial
+      #number: GPIO4 # D2 Software Serial
+      #inverted: true
+    baud_rate: 115200
+    data_bits: 8
+    parity: NONE
+    stop_bits: 1
+    #rx_buffer_size: 512 # Default buffer size is 256 byte, aber nur bei Software Serial
+    #newline: "\r\n"
+    debug:
+      direction: RX # zum Auslesen der Daten
+      #direction: BOTH # nur zu Debugging-Zwecken
+      dummy_receiver: true
+      #after:
+      #  delimiter: "\r\n\r\n"
+        #timeout: 300ms # default is 100ms
+
+      sequence:
+        - lambda: |-
+            UARTDebug::log_string(direction, bytes);  //Still log the data
+                
+            // ### Example to convert uart text to string
+            std::string str(bytes.begin(), bytes.end());
+            
+            // ### Convert it to data-string
+            String data = str.c_str();
+
+            // ### Parse the received string
+            char property[30];
+            char rx1_buffer[512];
+
+            // ### Variablen für Text Scan mit Funktion strok()
+            char rx2_buffer[512];
+            sprintf(rx2_buffer,"%s", data.c_str() );
+            const char delimiter[] = ",";
+            // ## Initialize variables to store sensor values Kurze Datenübertragung
+            bool power_switch = false;
+            float day_energy = 0.0;
+            float plant = 0.0;
+            float emission = 0.0;
+            int time = 0;
+            int p_adj = 0;
+            int temp_set = 0;
+
+            // ## Initialize variables to store sensor values Lange Datenübertragung
+            float f_pv_volt = 0.0;
+            float f_pv_current = 0.0;
+            float f_pv_power = 0.0;
+            float f_ac_volt = 0.0;
+            float f_ac_current = 0.0;
+            float f_out_power = 0.0;
+            float f_temperature = 0.0;
+            int i_power_adj = 0;
+            float f_total_energy = 0.0;
+
+            // ################## Scan der kurzen Datenübertragung WVC-600 ############################
+            // ### Standard Daten (ohne Daily Energy)
+            // ### Check for key word Plant
+            if ( data.startsWith("AT+SENDICA=property,PowerSwitch,1,Plant") || data.startsWith("AT+SENDICA=property,PowerSwitch,1,Day_Energy") ) {              
+                          
+              // ################# NEUE FUNKTION #################
+              // ### Split the input_text using strtok()
+              char* token = strtok(rx2_buffer, delimiter);
+              while (token != nullptr) {
+                if (strcmp(token, "PowerSwitch") == 0) {
+                    // Next token is the value for PowerSwitch (bool)
+                    token = strtok(nullptr, delimiter);
+                    power_switch = (strcmp(token, "1") == 0);
+                } else if (strcmp(token, "Day_Energy") == 0) {
+                    // Next token is the value for Day_Energy (float)
+                    token = strtok(nullptr, delimiter);
+                    day_energy = atof(token);
+                } else if (strcmp(token, "Plant") == 0) {
+                    // Next token is the value for Plant (float)
+                    token = strtok(nullptr, delimiter);
+                    plant = atof(token);
+                } else if (strcmp(token, "Emission") == 0) {
+                    // Next token is the value for Emission (float)
+                    token = strtok(nullptr, delimiter);
+                    emission = atof(token);
+                } else if (strcmp(token, "Time") == 0) {
+                    // Next token is the value for Time (int)
+                    token = strtok(nullptr, delimiter);
+                    time = atoi(token);
+                } else if (strcmp(token, "P_adj") == 0) {
+                    // Next token is the value for P_adj (int)
+                    token = strtok(nullptr, delimiter);
+                    p_adj = atoi(token);
+                } else if (strcmp(token, "TEMP_SET") == 0) {
+                    // Next token is the value for TEMP_SET (int)
+                    token = strtok(nullptr, delimiter);
+                    temp_set = atoi(token);
+                }
+
+                // ### Get the next token
+                token = strtok(nullptr, delimiter);
+              }
+
+              // ### Update the sensors with the extracted values
+              if ( power_switch == 0 ) {                
+                id(power_generation).publish_state(false);
+              } else {
+                if ( power_switch == 1) {
+                  id(power_generation).publish_state(true);
+                }
+              }
+              id(inv_daily_energy).publish_state(day_energy);
+              id(plant_trees).publish_state(plant);
+              id(inv_emmissions).publish_state(emission);
+              if ( time <= 600 ) {
+                id(act_start_time).publish_state(time);
+              }
+              id(act_zero_power_adj).publish_state(p_adj);
+              if ( temp_set <= 100 && temp_set >= 50 ) {
+                id(act_derate_temp).publish_state(temp_set);
+              }
+            }
+
+
+            // ################## Scan der langen Datenübertragung ############################
+            if ( data.startsWith("AT+SENDICA=property,PV_Volt") ) {
+              // ### Check if the RX buffer is empty and add the 1st part of the message
+              if ( id(rx1_string).empty() == true ) {
+                id(rx1_string) = data.c_str();
+              }
+            }
+            // ################## Scan des kurzen Datenübertragung ############################
+            if ( data.startsWith("AT+SENDICA=property,PV_Volt") == false ) {
+              if ( data.startsWith("AT+SENDICA=property,PowerSwitch,1,Plant") == false ) {
+                // ### Check if the RX buffer is not empty and add teh 2nd part of the message
+                if ( id(rx1_string).empty() == false ) {
+                  sprintf(rx1_buffer,"%s%s", id(rx1_string).c_str(), data.c_str() );
+                  // ### Werte aus dem zusammengesetzten String herauslesen
+
+                  // ################# NEUE FUNKTION #################
+                  // ### Split the input_text using strtok()
+                  char* token = strtok(rx1_buffer, delimiter);
+                  while (token != nullptr) {
+                    if (strcmp(token, "PV_Volt") == 0) {
+                        // Next token is the value for PV_Volt (float)
+                        token = strtok(nullptr, delimiter);
+                        f_pv_volt = atof(token);
+                    } else if (strcmp(token, "PV_Current") == 0) {
+                        // Next token is the value for PV_Current (float)
+                        token = strtok(nullptr, delimiter);
+                        f_pv_current = atof(token);
+                    } else if (strcmp(token, "PV_Power") == 0) {
+                        // Next token is the value for PV_Power (float)
+                        token = strtok(nullptr, delimiter);
+                        f_pv_power = atof(token);
+                    } else if (strcmp(token, "AC_Volt") == 0) {
+                        // Next token is the value for AC_Volt (float)
+                        token = strtok(nullptr, delimiter);
+                        f_ac_volt = atof(token);
+                    } else if (strcmp(token, "AC_Current") == 0) {
+                        // Next token is the value for AC_Current (float)
+                        token = strtok(nullptr, delimiter);
+                        f_ac_current = atof(token);
+                    } else if (strcmp(token, "Out_Power") == 0) {
+                        // Next token is the value for Out_Power (float)
+                        token = strtok(nullptr, delimiter);
+                        f_out_power = atof(token);
+                    } else if (strcmp(token, "Temperature") == 0) {
+                        // Next token is the value for Temperature (float)
+                        token = strtok(nullptr, delimiter);
+                        f_temperature = atof(token);
+                    } else if (strcmp(token, "Power_adjustment") == 0) {
+                        // Next token is the value for Power_adjustment (int)
+                        token = strtok(nullptr, delimiter);
+                        i_power_adj = atoi(token);
+                    } else if (strcmp(token, "Energy") == 0) {
+                        // Next token is the value for Energy (float)
+                        token = strtok(nullptr, delimiter);
+                        f_total_energy = atof(token);
+                    }
+
+                    // ### Get the next token
+                    token = strtok(nullptr, delimiter);
+                  }
+
+                  // ### Update the sensors with the extracted values
+
+                  // ### Update individual sensors         
+                  id(pv_voltage).publish_state(f_pv_volt);
+                  id(pv_current).publish_state(f_pv_current);
+                  id(pv_power).publish_state(f_pv_power);
+                  id(ac_voltage).publish_state(f_ac_volt);
+                  id(ac_current).publish_state(f_ac_current);
+                  id(output_power).publish_state(f_out_power);
+                  if (f_temperature < 120 ) {
+                    id(inv_temperature).publish_state(f_temperature);
+                  }              
+                  if ( i_power_adj <= 100 ) {
+                    id(act_power_limit).publish_state(i_power_adj);
+                  }
+                  id(inv_total_energy).publish_state(f_total_energy);
+                  // ### Clear the RX buffer string after all values were updated
+                  id(rx1_string) = "";
+
+                }
+              }
+            }       
+
+
+#### NUMBER ######################################################
+number:
+
+  #### Parameter Wechselrichter ##################################
+  - platform: template
+    name: "Set Start Time"
+    entity_category: config
+    icon: mdi:timer-outline
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    unit_of_measurement: "s"
+    id: start_time
+    min_value: 0
+    max_value: 600
+    step: 10
+    mode: box
+    on_value:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[40];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,Time,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Start Time %i", selected );
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,Time,50\r\n"
+          
+
+  - platform: template
+    name: "Set Derating Temperature"
+    entity_category: config
+    icon: mdi:thermometer-alert
+    optimistic: true
+    restore_value: true
+    initial_value: 60
+    unit_of_measurement: "°C"
+    device_class: temperature
+    id: derate_temp
+    min_value: 50
+    max_value: 100
+    step: 1
+    mode: box
+    on_value:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[40];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,TEMP_SET,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected TEMP_SET %i", selected );
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,TEMP_SET,56\r\n"
+
+
+  - platform: template
+    name: "Set 0 Power ADJ"
+    entity_category: config
+    icon: mdi:cog
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    unit_of_measurement: "W"
+    device_class: power
+    id: zero_power_adj
+    min_value: 0
+    max_value: 500
+    step: 1
+    mode: box
+    on_value:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[40];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,P_adj,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Zero Power Adjustment %i", selected );
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,P_adj,80\r\n"
+
+
+  - platform: template
+    name: "Set Power ADJ"
+    id: power_limit
+    entity_category: config
+    optimistic: true
+    restore_value: true
+    initial_value: 100
+    unit_of_measurement: "%"
+    device_class: power_factor
+    icon: mdi:tune
+    min_value: 1
+    max_value: 100
+    step: 1
+    mode: box
+    on_value:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[60];
+            int selected = x;
+            sprintf(textsend, "+ILOPDATA=ICA,Power_adjustment,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Output Power Adjustment %i", selected );
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            // "+ILOPDATA=ICA,Power_adjustment,50\r\n"
+
+
+#### SELECT ######################################################
+select:
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### Auswahl des Channel #######################################
+  - platform: template
+    name: "Set Channel"
+    id: slave_channel
+    entity_category: config
+    options:
+      - "Channel 0"
+      - "Channel 1"
+      - "Channel 2"
+      - "Channel 3"
+      - "Channel 4"
+    initial_option: "Channel 2"
+    optimistic: true
+    restore_value: true
+    internal: false
+    icon: mdi:lan
+    on_value:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[40];
+            int selected = i;
+            sprintf(textsend, "+ILOPDATA=ICA,Channel,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            sprintf(textsend, "Channel %i", selected );
+            id(wvc_channel).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Channel %i", selected );         
+            return std::vector<unsigned char>( s.begin(), s.end() );
+            //"+ILOPDATA=ICA,Channel,%d\r\n", index.value()
+
+  #### Auswahl des Models ########################################
+  - platform: template
+    name: "Set Model"
+    id: inv_model
+    entity_category: config
+    options:
+      - "WVC300W"
+      - "WVC350W"
+      - "WVC400W"
+      - "WVC600W"
+      - "WVC700W"
+      - "WVC800W"
+      - "WVC1200W"
+      - "WVC1400W"
+      - "WVC1600W"
+      - "WVC2000W"
+      - "WVC2400W"
+      - "WVC2800W"
+    initial_option: "WVC600W"
+    optimistic: true
+    restore_value: true
+    icon: mdi:monitor
+    on_value:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[40];
+            int selected = i;
+            sprintf(textsend, "+ILOPDATA=ICA,Model,%i\\r\\n", selected );
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            sprintf(textsend, "%s", x.c_str() );
+            id(wvc_model).publish_state(textsend); 
+            ESP_LOGD("main", "Selected Model %i", selected );         
+            return std::vector<unsigned char>( s.begin(), s.end() );        
+            // "+ILOPDATA=ICA,Model,11\r\n"
+
+  #################### UART ######################################
+  ###
+  #### WECHSEL DER BAUD RATE IM BETRIEB###########################
+  - id: change_baud_rate
+    name: "UART Baud Rate"
+    platform: template
+    options:
+      - "2400"
+      - "9600"
+      - "38400"
+      - "57600"
+      - "115200"
+      - "256000"
+      - "512000"
+      - "921600"
+    initial_option: "115200"
+    optimistic: true
+    restore_value: True
+    internal: false
+    entity_category: config
+    icon: mdi:swap-horizontal
+    set_action:
+      - lambda: |-
+          uint32_t new_baud_rate = stoi(x);
+          id(esp8266v3_uart0).flush();
+          if (id(esp8266v3_uart0).get_baud_rate() != new_baud_rate) {
+            id(esp8266v3_uart0).set_baud_rate(new_baud_rate);
+            id(esp8266v3_baud).publish_state(new_baud_rate);
+            ESP_LOGD("change_baud_rate", "UART0 Changing baud rate from %i to %i",id(esp8266v3_uart0).get_baud_rate(), new_baud_rate);
+          }
+          id(esp8266v3_uart1).flush();
+          if (id(esp8266v3_uart1).get_baud_rate() != new_baud_rate) {
+            id(esp8266v3_uart1).set_baud_rate(new_baud_rate);
+            ESP_LOGD("change_baud_rate", "UART1 Changing baud rate from %i to %i",id(esp8266v3_uart1).get_baud_rate(), new_baud_rate);
+            id(esp8266v3_baud).publish_state(new_baud_rate);
+          }
+
+
+  #### WECHSEL DER STOP BITS IM BETRIEB ##########################
+  - id: change_data_bits
+    name: "UART Data Bits"
+    platform: template
+    options:
+      - "5"
+      - "6"
+      - "7"
+      - "8"
+    initial_option: "8"
+    optimistic: true
+    restore_value: True
+    internal: false
+    entity_category: config
+    icon: mdi:swap-horizontal
+    set_action:
+      - lambda: |-
+          id(esp8266v3_uart0).flush();
+          id(esp8266v3_uart1).flush();
+          uint32_t new_data_bits = stoi(x);
+          if (id(esp8266v3_uart0).get_data_bits() != new_data_bits) {
+            id(esp8266v3_uart0).set_data_bits(new_data_bits);
+            ESP_LOGD("change_data_bits", "UART0 Changing data bits from %i to %i",id(esp8266v3_uart0).get_data_bits(), new_data_bits);
+            id(esp8266v3_data_bits).publish_state(new_data_bits);
+          }
+          if (id(esp8266v3_uart1).get_data_bits() != new_data_bits) {
+            id(esp8266v3_uart1).set_data_bits(new_data_bits);
+            ESP_LOGD("change_data_bits", "UART1 Changing data bits from %i to %i",id(esp8266v3_uart1).get_data_bits(), new_data_bits);
+            id(esp8266v3_data_bits).publish_state(new_data_bits);
+          }
+
+  #### WECHSEL DER STOP BITS IM BETRIEB ##########################
+  - id: change_stop_bits
+    name: "UART Stop Bits"
+    platform: template
+    options:
+      - "1"
+      - "2"
+    initial_option: "1"
+    optimistic: true
+    restore_value: True
+    internal: false
+    entity_category: config
+    icon: mdi:swap-horizontal
+    set_action:
+      - lambda: |-
+          id(esp8266v3_uart0).flush();
+          id(esp8266v3_uart1).flush();
+          uint32_t new_stop_bits = stoi(x);
+          if (id(esp8266v3_uart0).get_stop_bits() != new_stop_bits) {
+            id(esp8266v3_uart0).set_stop_bits(new_stop_bits);
+            ESP_LOGD("change_stop_bits", "UART0 Changing stop bits from %i to %i",id(esp8266v3_uart0).get_stop_bits(), new_stop_bits);
+            id(esp8266v3_stop_bits).publish_state(new_stop_bits);
+          }
+          if (id(esp8266v3_uart1).get_stop_bits() != new_stop_bits) {
+            id(esp8266v3_uart1).set_stop_bits(new_stop_bits);
+            ESP_LOGD("change_stop_bits", "UART1 Changing stop bits from %i to %i",id(esp8266v3_uart1).get_stop_bits(), new_stop_bits);
+            id(esp8266v3_stop_bits).publish_state(new_stop_bits);
+          }
+
+  #### WECHSEL DER PARITYY IM BETRIEB ##########################
+  - id: change_parity
+    name: "UART Parity"
+    platform: template
+    options:
+      - "NONE"
+      - "EVEN"
+      - "ODD"
+    initial_option: "NONE"
+    optimistic: true
+    restore_value: True
+    internal: false
+    entity_category: config
+    icon: mdi:swap-horizontal
+    set_action:
+      - lambda: |-
+          id(esp8266v3_uart0).flush();
+          id(esp8266v3_uart1).flush();
+          std::string ZustandText = (x);
+          int new_parity = 0;
+          std::string act_parity_txt = id(esp8266v3_parity).state;
+          if (ZustandText == "ODD") {
+              new_parity = 2;
+          } else {
+            if (ZustandText == "EVEN") {
+              new_parity = 1;
+            } else {
+              new_parity = 0;
+            }
+          }
+          if (id(esp8266v3_uart0).get_parity() != new_parity) {
+            id(esp8266v3_uart0).set_parity(UARTParityOptions (new_parity) );
+            ESP_LOGD("change_parity", "UART0 Changing parity option from %s to %s", act_parity_txt, ZustandText);
+            id(esp8266v3_parity_int).publish_state(new_parity);
+          }
+          if (id(esp8266v3_uart1).get_parity() != new_parity) {
+            id(esp8266v3_uart1).set_parity(UARTParityOptions (new_parity) );
+            ESP_LOGD("change_parity", "UART1 Changing parity option from %s to %s", act_parity_txt, ZustandText);
+            id(esp8266v3_parity_int).publish_state(new_parity);
+          }
+
+
+#### SWITCH ######################################################
+switch:
+  # Nestart des ESP8266
+  - platform: restart
+    name: "Restart"
+
+
+#### BUTTON ######################################################
+button:
+  
+  #################### WVC INTERFACE #############################
+  ###
+  #### PV-Wechselrichter Button
+  - platform: template
+    name: "Power ON/OFF"
+    id: power_on_off
+    icon: mdi:power
+    on_press:
+      - if:
+          condition:
+            # Same syntax for is_off
+            binary_sensor.is_off: power_generation
+          then:
+            - uart.write:
+                id: esp8266v3_uart1
+                data: !lambda |-
+                  char textsend[40];
+                  sprintf(textsend, "+ILOPDATA=ICA,PowerSwitch,1\\r\\n" );
+                  std::string s = textsend;
+                  id(esp8266v3_raw_string_tx).publish_state(textsend);
+                  id(power_generation).publish_state(true); 
+                  return std::vector<unsigned char>( s.begin(), s.end() );
+            - logger.log: "Switch Turned On!"        
+      - if:
+          condition:
+            # Same syntax for is_off
+            binary_sensor.is_on: power_generation
+          then:
+            - uart.write:
+                id: esp8266v3_uart1
+                data: !lambda |-
+                  char textsend[40];
+                  sprintf(textsend, "+ILOPDATA=ICA,PowerSwitch,0\\r\\n" );
+                  std::string s = textsend;
+                  id(esp8266v3_raw_string_tx).publish_state(textsend); 
+                  id(power_generation).publish_state(false); 
+                  return std::vector<unsigned char>( s.begin(), s.end() );
+            - logger.log: "Switch Turned Off!"
+
+
+  #### Reset of total energy
+  - platform: template
+    name: "Energy Clear"
+    id: energy_clear
+    icon: mdi:broom
+    on_press:
+      - uart.write:
+          id: esp8266v3_uart1
+          data: !lambda |-
+            char textsend[40];
+            static int clickCount = 0;
+            clickCount++;
+            if (clickCount == 1) {
+              sprintf(textsend, "+ILOPDATA=ICA,Energy_Cleared,1\\r\\n" );
+            }  
+            if (clickCount == 2) {
+              sprintf(textsend, "+ILOPDATA=ICA,Energy_Cleared,0\\r\\n" );
+              clickCount = 0; // Reset the counter
+            }
+            std::string s = textsend;
+            id(esp8266v3_raw_string_tx).publish_state(textsend); 
+            return std::vector<unsigned char>( s.begin(), s.end() );
+
+            // "+ILOPDATA=ICA,Energy_Cleared,1\r\n"
+            // "+ILOPDATA=ICA,Energy_Cleared,0\r\n"
+
+
+
+#### BINARY SENSOR ###############################################
+binary_sensor:
+  # Status der WIFI Schnittstelle
+  - platform: status
+    name: "WiFi Status"
+    id: wifi_status
+    icon: mdi:router-wireless
+
+  # Status der Energie-Produktion EIN/AUS
+  - platform: template
+    name: "Power Generation"
+    id: power_generation
+    icon: mdi:power
+
+  # Helper for Power-Adjust value correction 10 vs 100
+  # ON = 10 % Adjust
+  # OFF = 100 % Adjust
+  - platform: template
+    name: PWRAJ
+    id: pwr_adjust
+    internal: true
+
+
+#### GLOBALS #####################################################
+globals:
+  ### Globale string variable für UART1 RX String
+  - id: rx1_string
+    type: std::string
+    restore_value: no
+    max_restore_data_length: 254
+    initial_value: ""
+
+
+#### STATUS-LED ##################################################
+output:
+  # BLUE Onboard-LED an GPIO2 ansteuern
+  - platform: esp8266_pwm
+    id: onboard_led
+    pin:
+      number: GPIO2 # D4
+      inverted: true
+
+light:
+ - platform: monochromatic
+   name: "Onboard LED"
+   output: onboard_led
+   id: blue_led
+
+
+#### SENSOR ######################################################
+sensor:
+
+  #################### WVC INTERFACE #############################
+  ###
+  ############ PV-Wechselrichter Sensor-Werte ####################
+  - platform: template
+    name: "PV Voltage"
+    id: pv_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: voltage
+    state_class: measurement
+  - platform: template
+    name: "PV Current"
+    id: pv_current
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: current
+    state_class: measurement
+  - platform: template
+    name: "PV Power"
+    id: pv_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: power
+    state_class: measurement
+  - platform: template
+    name: "AC Voltage"
+    id: ac_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 1
+    icon: "mdi:flash"
+    device_class: voltage
+    state_class: measurement
+  - platform: template
+    name: "AC Current"
+    id: ac_current
+    unit_of_measurement: "A"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: current
+    state_class: measurement
+  - platform: template
+    name: "Output Power"
+    id: output_power
+    unit_of_measurement: "W"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: power
+    state_class: measurement
+  - platform: template
+    name: "Temperature"
+    id: inv_temperature
+    unit_of_measurement: "°C"
+    accuracy_decimals: 0
+    icon: "mdi:thermometer"
+    device_class: temperature
+    state_class: measurement
+  - platform: template
+    name: "Daily Energy"
+    id: inv_daily_energy
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: energy
+    state_class: total_increasing
+  - platform: template
+    name: "Total Energy"
+    id: inv_total_energy
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 2
+    icon: "mdi:flash"
+    device_class: energy
+    state_class: total_increasing
+  - platform: template
+    name: "Planting trees"
+    id: plant_trees
+    unit_of_measurement: "pcs"
+    accuracy_decimals: 2
+    icon: "mdi:forest"
+    state_class: total_increasing
+  - platform: template
+    name: "C02 reduction"
+    id: inv_emmissions
+    unit_of_measurement: "t"
+    accuracy_decimals: 2
+    icon: "mdi:leaf"
+    state_class: total_increasing
+    
+    ### Einstell-Parameter
+  - platform: template
+    name: "Start Time"
+    id: act_start_time
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    icon: mdi:timer-outline
+  - platform: template
+    name: "Derating Temperature"
+    icon: mdi:thermometer-alert
+    unit_of_measurement: "°C"
+    device_class: temperature
+    id: act_derate_temp
+  - platform: template
+    name: "Zero Power ADJ"
+    icon: mdi:cog
+    unit_of_measurement: "W"
+    device_class: power
+    id: act_zero_power_adj
+  - platform: template
+    name: "Power Limit"
+    id: act_power_limit
+    unit_of_measurement: "%"
+    device_class: power_factor
+    icon: mdi:tune
+
+
+  #### WiFi Sensor ####
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal"
+    id: wifi_strength
+    update_interval: 60s
+    entity_category: "diagnostic"
+    icon: 'mdi:signal-cellular-1'
+    
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_strength
+    name: "WiFi Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    icon: 'mdi:signal-cellular-2'
+
+  # Versorgugsspannung messen
+  - platform: adc
+    pin: VCC
+    name: "VCC Spannung"
+    id: vcc_spannung
+    update_interval: 60s
+    entity_category: "diagnostic"
+    #filters:
+    #  - lambda: return x * (5.0 / 1024.0);  # Scale the voltage to 5V
+
+  # UART Parameter
+  - platform: template
+    name: "UART Baud Rate"
+    id: esp8266v3_baud
+    accuracy_decimals: 0
+    entity_category: "diagnostic"
+    icon: mdi:swap-horizontal
+
+  - platform: template
+    name: "UART Data Bits"
+    id: esp8266v3_data_bits
+    accuracy_decimals: 0
+    entity_category: "diagnostic"
+    icon: mdi:swap-horizontal
+
+  - platform: template
+    name: "UART Stop Bits"
+    id: esp8266v3_stop_bits
+    accuracy_decimals: 0
+    entity_category: "diagnostic"
+    icon: mdi:swap-horizontal
+
+  # UART Parameter PARITY
+  - platform: template
+    id: esp8266v3_parity_int
+    internal: true
+    on_value:
+        then:
+          - lambda: |-
+              String ZustandText = "----";
+              int state = (x);
+              switch (state) {
+                case 0: ZustandText = "NONE";
+                  break;
+                case 1: ZustandText = "EVEN";
+                  break;
+                case 2: ZustandText = "ODD";
+                  break;
+              }
+              id(esp8266v3_parity).publish_state(ZustandText.c_str());
+
+
+#### TEXT SENSOR #################################################
+
+text_sensor:
+
+  #################### WVC INTERFACE #############################
+  ###
+  #### Anzeige des Channel #######################################
+  - platform: template
+    name: "WVC Channel"
+    id: "wvc_channel"
+    icon: mdi:lan
+    ##entity_category: config
+
+  #### Auswahl des Models ########################################
+  - platform: template
+    name: "WVC Model"
+    id: wvc_model
+    icon: mdi:monitor
+    ##entity_category: config
+
+
+
+
+  #### Lokale ESP-Informationen
+  - platform: version
+    name: ESPHome Version
+  # Local WiFi Info as Text-Sensor
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+    ssid:
+      name: Connected SSID
+    bssid:
+      name: Connected BSSID
+    mac_address:
+      name: Mac Wifi Address
+    scan_results:
+      name: Latest Scan Results
+
+  # UART Parameter
+  - platform: template
+    name: "UART Parity"
+    id: esp8266v3_parity
+    entity_category: "diagnostic"
+    icon: mdi:swap-horizontal
+
+  #### UART0 Raw string Text Sensor ESP8266-V3
+  ### TX ###
+  - platform: template
+    name: "UART0 TX"
+    id: "rawString_tx"
+  
+  ### RX ###
+  - platform: template
+    name: "UART0 RX"
+    id: "rawString"
+
+
+  #### UART1 Raw string Text Sensor ESP8266-V3
+  ### TX ###
+  - platform: template
+    name: "UART1 TX"
+    id: "esp8266v3_raw_string_tx"
+
+  ### RX ### an GPIO4 / D2 Software Serial
+  # UART1 Raw string Custom Text Sensor ESP8266-V3
+  - platform: template
+    name: "UART1 RX"
+    id: esp8266v3_raw_string
+       
+
+
+#### END #########################################################
+
