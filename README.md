@@ -3,6 +3,7 @@ HA ESPHome code for replacment of the WiFi module inside the KaiDeng WVC-Life Mi
 
 <h3 tabindex="-1" class="heading-element" dir="auto">Limitations</h3>
 The code can cover the following WVC Inverter models of the "Wireless Series R3"
+
 - WVC-300W-Life
 - WVC-350W-Life
 - WVC-400W-Life
