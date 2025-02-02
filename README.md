@@ -1,6 +1,8 @@
 # HA-ESPHome-WVC-Inverter
 HA ESPHome code for replacement of the WiFi module inside the KaiDeng WVC-Life Micro Inverters.
 
+Then to micro inverter is directly sending the actual values to Home Assistant. No cloud communication is active anymore :)
+
 <img src="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverter/blob/main/Pictures/WVC800_HA-Page.png">
 
 In the folder ESPHome are 3 exapmles for the YAML code of the Inverter models WVC-600W, WVC-700W and WVC-800W.
