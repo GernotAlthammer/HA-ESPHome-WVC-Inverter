@@ -1,7 +1,7 @@
 # HA-ESPHome-WVC-Inverter
 HA ESPHome code for replacement of the WiFi module inside the KaiDeng WVC-Life Micro Inverters.
 
-Then the micro inverter is directly sending the actual values to Home Assistant. No cloud communication is active anymore. The "Cloud intelligence App" is no longer needed.
+Then the micro inverter is directly sending the actual values to Home Assistant. No cloud communication is active anymore. The App "Cloud Intelligence" is no longer needed.
 
 <img src="https://github.com/GernotAlthammer/HA-ESPHome-WVC-Inverter/blob/main/Pictures/WVC800_HA-Page.png">
 
