@@ -1,6 +1,9 @@
 # HA-ESPHome-WVC-Inverter
 HA ESPHome code for replacment of the WiFi module inside the KaiDeng WVC-Life Micro Inverters.
 
+In the folder ESPHome are 3 exapmles for the YAML code of the Inverter models WVC-600W, WVC-700W and WVC-800W.
+That code needs to be changed in some of the default values in order to mach your Inverter model settings.
+
 <h3 tabindex="-1" class="heading-element" dir="auto">Limitations</h3>
 The code can cover the following WVC Inverter models of the "Wireless Series R3"
 
